@@ -11,6 +11,59 @@ library(readxl) # Read Excel files
 # Set working directory
 setwd("~/Google Drive/git/vasectomy_mapping")
 
+
+# Define grattan colors
+glightyellow <- "#FFE07F"
+gyellow <- "#FFC35A"
+gorange <- "#F68B33"
+gdark <- "#D4582A"
+gdarker <- "#BD3603" 
+gred <- "#A02226"
+gdarkred <- "#621214"
+
+# Define Marie Stopes shades
+
+ms <- "#409DD6"
+
+ms1 <- "#A0CEEB"
+ms2 <- "#70B6E0"
+ms4 <- "#3889BB"
+ms5 <- "#286286"
+
+
+# Read in STATES shapefile (map) data
+state.shapefile <- readOGR("data/statesshapefile/", "STE11aAust")
+state.shapefile.details <- merge(fortify(shapefile), 
+                           as.data.frame(shapefile), 
+                           by.x="id", 
+                           by.y=0)
+
+states.poly <- state.shapefile.details %>% 
+               rename(state = "STATE_NAME",
+                      state_code = "STATE_CODE")
+
+# Read in SA3 shapefile (map) data
+shapefile <- readOGR("data/sa3shapefile/", "SA3_2016_AUST")
+shapefile.details <- merge(fortify(shapefile), 
+                           as.data.frame(shapefile), 
+                           by.x="id", 
+                           by.y=0)
+
+sa3poly <- shapefile.details %>%
+  rename(sa3_name = "SA3_CODE16",
+         sa3 = "SA3_NAME16",
+         sa4 = "SA4_CODE16",
+         sa4_name = "SA4_NAME16",
+         gcc = "GCC_CODE16",
+         gcc_name = "GCC_NAME16",
+         state_code = "STE_CODE16",
+         state = "STE_NAME16",
+         area = "AREASQKM16"
+  ) %>% 
+  mutate(city = if_else(grepl('Greater', gcc_name), TRUE, 
+                        if_else(state == "Australian Capital Territory", TRUE, 
+                                FALSE)))
+
 # Read in SA3 to postcode mapping
 postcodes <-  read_excel(path = "data/1270055006_CG_POSTCODE_2011_SA3_2011.xls",
                   sheet = "Table 3",
@@ -32,21 +85,135 @@ postcodes <-  read_excel(path = "data/1270055006_CG_POSTCODE_2011_SA3_2011.xls",
 
   
 # Read in SA3 age data
-sa3age <- read_csv("data/table.csv",
-                       skip = 10) %>% 
-          slice(2:n()) %>% 
-          rename(sa3 = "AGE10P - Age in Ten Year Groups") %>% 
-          rename(a2029 = "20-29 years") %>% 
-          rename(a3039 = "30-39 years") %>% 
-          rename(a4049 = "40-49 years") %>% 
-          rename(a5059 = "50-59 years") %>% 
-          rename(a6069 = "60-69 years")
+  sa3age <- read_csv("data/table.csv",
+                         skip = 10) %>% 
+            slice(2:351) %>%   # Drop the first observation and remove cruft at bottom
+            select(-X8) %>%    # Drop the empty variable X8
+            rename(sa3 = "AGE10P - Age in Ten Year Groups") %>%  # Rename variables to be easier to use
+            rename(a2029 = "20-29 years") %>% 
+            rename(a3039 = "30-39 years") %>% 
+            rename(a4049 = "40-49 years") %>% 
+            rename(a5059 = "50-59 years") %>% 
+            rename(a6069 = "60-69 years") %>% 
+            rename(total = "Total") %>% 
+            mutate(a2029 = as.numeric(a2029),  # Convert a2029 variable to numeric (wasn't before due to import process)
+                   pc = (a2029 + a3039)/total) # Generate a new variable for the proportion of males who are 20-39 years old
+            
 
-# Now merge the two datasets
-sa3 <- left_join(postcodes, sa3age, by = "sa3") 
 
-edit <- sa3 %>% mutate(over50 = a5059 + a6069,
-                       over50pc = over50 / Total,
-                       vpop = (a3039/Total) )
-          
+# Now merge the three datasets
+  sa3 <-  left_join(sa3poly, postcodes, by = "sa3") %>% 
+          group_by(sa3) %>% # This is creating a tag for one observation in each sa3 poly set
+          mutate(justone = 1,
+                 one = cumsum(justone)) %>% 
+          select(-justone) %>% 
+          ungroup()
+  
+  sa3 <- left_join(sa3, sa3age, by = "sa3")
 
+# Create smaller dataset for one == 1
+  sa3one <- sa3 %>% filter(one == 1)
+  
+# Plotting and saving a map of 20-39 year old males as a proportion of all males in an area
+  malemap <-
+    sa3 %>% filter(state == "Victoria") %>% 
+    ggplot() + 
+    geom_polygon(aes(x = long, y = lat, group = group, fill = pc), color = NA) + 
+    scale_fill_gradientn(name = "",
+                         colours = c(ms1, ms, ms5),
+                         # values = rescale(c(0, 10, 30, 50)),
+                         limits = c(0,1),
+                         na.value = "grey90") +
+    theme_void() +
+    theme(legend.position = "top",
+          plot.title = element_text(hjust = 0.5)) +
+    NULL 
+  
+  ggsave("malemap.pdf", malemap)
+
+  
+# METHOD1: Plotting one area against all others in a state
+  warnambool <- 
+    ggplot() + 
+    geom_polygon(data = (sa3 %>% filter(state == "Victoria") %>% mutate(hl = sa3 == "Warrnambool")),
+                 aes(x = long, y = lat, group = group, fill = hl), color = "grey90", size = .001) + 
+    scale_fill_manual(values = c("white", 
+                                 ms)) +
+    # scale_fill_gradientn(name = "",
+    #                      colours = c(ms1, ms),
+    #                      # values = rescale(c(0, 10, 30, 50)),
+    #                      limits = c(0,1),
+    #                      na.value = "grey90") +
+    theme_void() +
+    theme(legend.position = "off",
+          plot.title = element_text(hjust = 0.5)) +
+    NULL 
+  
+  ggsave("warnambool.pdf", warnambool)
+  
+  
+  
+  
+  # METHOD2: Plotting one area against all others in a state
+  warnambool2 <-
+    ggplot() + 
+    geom_polygon(data = (states.poly %>% filter(state == "Victoria")),
+                 aes(x = long, y = lat, group = group),
+                 fill = "grey90") +
+    geom_polygon(data = (sa3 %>% filter(sa3 == "Warrnambool")),
+                 aes(x = long, y = lat, group = group), 
+                 fill = ms) +
+    # scale_fill_manual(values = c("white", 
+    #                              ms)) +
+    # scale_fill_gradientn(name = "",
+    #                      colours = c(ms1, ms),
+    #                      # values = rescale(c(0, 10, 30, 50)),
+    #                      limits = c(0,1),
+    #                      na.value = "grey90") +
+    theme_void() +
+    theme(legend.position = "off",
+          plot.title = element_text(hjust = 0.5)) +
+    coord_fixed() +
+    NULL 
+  
+  ggsave("warnambool2.pdf", warnambool2)
+    
+
+  
+  
+  
+  
+  
+  
+  # METHOD2b: Plotting one area against all others in a state via a loop
+  for (place in unique(sa3$sa3)) {
+      # Get the state of the place (s)
+      thisstatecode <- as.numeric(sa3one %>% filter(sa3 == place) %>% select(state_code))
+      
+      # Generate the chart
+      chart <-
+        ggplot() + 
+        geom_polygon(data = (states.poly %>% filter(state_code == thisstatecode)),
+                     aes(x = long, y = lat, group = group),
+                     fill = "grey90") +
+        geom_polygon(data = (sa3 %>% filter(sa3 == place)),
+                     aes(x = long, y = lat, group = group), 
+                     fill = ms) +
+        # scale_fill_manual(values = c("white", 
+        #                              ms)) +
+        # scale_fill_gradientn(name = "",
+        #                      colours = c(ms1, ms),
+        #                      # values = rescale(c(0, 10, 30, 50)),
+        #                      limits = c(0,1),
+        #                      na.value = "grey90") +
+        theme_void() +
+        theme(legend.position = "off",
+              plot.title = element_text(hjust = 0.5)) +
+        coord_fixed() +
+        NULL 
+      
+      ggsave(paste0(place,".pdf"), chart)
+  }
+  
+  
+    
