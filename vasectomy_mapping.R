@@ -132,87 +132,54 @@ postcodes <-  read_excel(path = "data/1270055006_CG_POSTCODE_2011_SA3_2011.xls",
   ggsave("malemap.pdf", malemap)
 
   
-# METHOD1: Plotting one area against all others in a state
-  warnambool <- 
-    ggplot() + 
-    geom_polygon(data = (sa3 %>% filter(state == "Victoria") %>% mutate(hl = sa3 == "Warrnambool")),
-                 aes(x = long, y = lat, group = group, fill = hl), color = "grey90", size = .001) + 
-    scale_fill_manual(values = c("white", 
-                                 ms)) +
-    # scale_fill_gradientn(name = "",
-    #                      colours = c(ms1, ms),
-    #                      # values = rescale(c(0, 10, 30, 50)),
-    #                      limits = c(0,1),
-    #                      na.value = "grey90") +
-    theme_void() +
-    theme(legend.position = "off",
-          plot.title = element_text(hjust = 0.5)) +
-    NULL 
   
-  ggsave("warnambool.pdf", warnambool)
+  # Plotting one area against all others in a state via a loop ("highlighting" an area)
   
+  sample <- sample(unique(sa3$sa3), 10)
   
-  
-  
-  # METHOD2: Plotting one area against all others in a state
-  warnambool2 <-
-    ggplot() + 
-    geom_polygon(data = (states.poly %>% filter(state == "Victoria")),
-                 aes(x = long, y = lat, group = group),
-                 fill = "grey90") +
-    geom_polygon(data = (sa3 %>% filter(sa3 == "Warrnambool")),
-                 aes(x = long, y = lat, group = group), 
-                 fill = ms) +
-    # scale_fill_manual(values = c("white", 
-    #                              ms)) +
-    # scale_fill_gradientn(name = "",
-    #                      colours = c(ms1, ms),
-    #                      # values = rescale(c(0, 10, 30, 50)),
-    #                      limits = c(0,1),
-    #                      na.value = "grey90") +
-    theme_void() +
-    theme(legend.position = "off",
-          plot.title = element_text(hjust = 0.5)) +
-    coord_fixed() +
-    NULL 
-  
-  ggsave("warnambool2.pdf", warnambool2)
+  # for (place in unique(sa3$sa3)) {
+  for (place in sample) {
     
-
-  
-  
-  
-  
-  
-  
-  # METHOD2b: Plotting one area against all others in a state via a loop
-  for (place in unique(sa3$sa3)) {
       # Get the state of the place (s)
       thisstatecode <- as.numeric(sa3one %>% filter(sa3 == place) %>% select(state_code))
+      city <- as.logical(sa3one %>% filter(sa3 == place) %>% select(city))
       
+      if (city) {
       # Generate the chart
       chart <-
         ggplot() + 
-        geom_polygon(data = (states.poly %>% filter(state_code == thisstatecode)),
+        geom_polygon(data = (sa3 %>% filter(state_code == thisstatecode & city == TRUE)),
                      aes(x = long, y = lat, group = group),
                      fill = "grey90") +
         geom_polygon(data = (sa3 %>% filter(sa3 == place)),
                      aes(x = long, y = lat, group = group), 
                      fill = ms) +
-        # scale_fill_manual(values = c("white", 
-        #                              ms)) +
-        # scale_fill_gradientn(name = "",
-        #                      colours = c(ms1, ms),
-        #                      # values = rescale(c(0, 10, 30, 50)),
-        #                      limits = c(0,1),
-        #                      na.value = "grey90") +
         theme_void() +
         theme(legend.position = "off",
               plot.title = element_text(hjust = 0.5)) +
         coord_fixed() +
         NULL 
+
+      ggsave(paste0("atlas/", place,"_",thisstatecode,".pdf"), chart)
       
-      ggsave(paste0(place,".pdf"), chart)
+      } else {
+        # Generate the chart of GCC area
+        chart <-
+          ggplot() + 
+          geom_polygon(data = (states.poly %>% filter(state_code == thisstatecode)),
+                       aes(x = long, y = lat, group = group),
+                       fill = "grey90") +
+          geom_polygon(data = (sa3 %>% filter(sa3 == place)),
+                       aes(x = long, y = lat, group = group), 
+                       fill = ms) +
+          theme_void() +
+          theme(legend.position = "off",
+                plot.title = element_text(hjust = 0.5)) +
+          coord_fixed() +
+          NULL 
+        
+        ggsave(paste0("atlas/", place,"_",thisstatecode,".pdf"), chart)
+      }
   }
   
   
